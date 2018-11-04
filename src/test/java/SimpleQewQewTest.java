@@ -23,43 +23,70 @@
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayDeque;
+import java.util.Queue;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-class QewQewTest {
+class SimpleQewQewTest {
 
-    static final Path HEAD_PATH = Paths.get("qew-head");
+    static final Path HEAD_PATH = Paths.get("qew-head.qew");
 
-    public static final int BLOCK_SIZE = 4096;
-    public static final int CHUNK_SIZE = 1024 * 1024;
+    public static final int BUFFER_SIZE = 4096;
+    public static final int CHUNK_SIZE = 1024;
 
     @Test
     void testQueue() throws IOException {
-        try (QewQew q = new QewQew(HEAD_PATH, BLOCK_SIZE, CHUNK_SIZE, true)) {
+        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
             q.clear();
             assertTrue(q.isEmpty());
 
-            q.enqew(buf('a', 'b', 'c'));
+            q.enqueue(buf('a', 'b', 'c'));
             assertTrue(!q.isEmpty());
 
             String s = new String(q.peek());
             assertEquals("abc", s);
 
-            assertTrue(q.deqew());
+            assertTrue(q.dequeue());
             assertTrue(q.isEmpty());
+        }
+    }
+
+    @Test
+    void testMultipleOpen() throws IOException {
+        try (SimpleQewQew ignored = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
+            assertThrows(QewAlreadyOpenException.class, () -> new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE));
         }
     }
 
     @Test
     void testManyWrites() throws IOException {
         Random r = new Random(1);
-        try (QewQew q = new QewQew(HEAD_PATH, BLOCK_SIZE, CHUNK_SIZE, true)) {
+        Queue<byte[]> expectedBuffers = new ArrayDeque<>();
+        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
             q.clear();
             for (int i = 0; i < 1000; ++i) {
-                q.enqew(buf(r.nextInt(((short) -1) & 0xFFFF)));
+                byte[] buf = buf(r.nextInt(((short) -1) & 0xFFFF), r.nextInt(((short) -1) & 0xFFFF));
+                expectedBuffers.add(buf);
+                q.enqueue(buf);
             }
+            assertFalse(q.isEmpty());
+        }
+
+
+        try (SimpleQewQew actualBuffers = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
+            while (!actualBuffers.isEmpty()) {
+                byte[] expected = expectedBuffers.remove();
+                byte[] actual = actualBuffers.peek();
+                assertTrue(actualBuffers.dequeue());
+                assertArrayEquals(expected, actual);
+            }
+
+            assertTrue(actualBuffers.isEmpty());
+            assertTrue(expectedBuffers.isEmpty());
+            assertFalse(actualBuffers.clear());
         }
     }
 
