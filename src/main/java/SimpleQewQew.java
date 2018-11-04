@@ -158,7 +158,14 @@ public class SimpleQewQew implements QewQew<byte[]> {
     }
 
     public boolean isEmpty() {
-        return chunks.isEmpty();
+        if (chunks.isEmpty()) {
+            return true;
+        }
+        if (chunks.size() == 1) {
+            Chunk c = chunks.getFirst();
+            return c.headPtr >= c.tailPtr;
+        }
+        return false;
     }
 
     public boolean clear() throws IOException {
@@ -168,6 +175,8 @@ public class SimpleQewQew implements QewQew<byte[]> {
         head.first = NULL_REF;
         writeQueueFirst(head, headBuffer);
         Iterator<Chunk> it = chunks.iterator();
+        Chunk first = it.next();
+        resetChunk(first, headBuffer);
         while (it.hasNext()) {
             it.next().drop();
             it.remove();
@@ -220,10 +229,15 @@ public class SimpleQewQew implements QewQew<byte[]> {
         writeChunkHeadPtr(chunk, headBuffer);
 
         if (chunk.headPtr >= chunk.tailPtr) {
-            Chunk depleted = chunks.removeFirst();
-            depleted.drop();
-            head.first = depleted.next;
-            writeQueueFirst(head, headBuffer);
+            if (chunks.size() == 1) {
+                Chunk depleted = chunks.getFirst();
+                resetChunk(depleted, headBuffer);
+            } else {
+                Chunk depleted = chunks.removeFirst();
+                depleted.drop();
+                head.first = depleted.next;
+                writeQueueFirst(head, headBuffer);
+            }
         }
         return true;
     }
@@ -256,6 +270,16 @@ public class SimpleQewQew implements QewQew<byte[]> {
             }
         }
         head.close();
+        if (isEmpty()) {
+            for (Chunk chunk : chunks) {
+                try {
+                    chunk.drop();
+                } catch (IOException ignored) {
+
+                }
+            }
+            Files.delete(head.path);
+        }
     }
 
     private void writeToChunk(Chunk chunk, ByteBuffer buf, byte[] payload, int offset, int length) throws IOException {
@@ -286,6 +310,13 @@ public class SimpleQewQew implements QewQew<byte[]> {
             chunk.tailPtr = chunk.file.position();
             writeChunkHeader(chunk, buf);
         }
+    }
+
+    private static void resetChunk(Chunk chunk, ByteBuffer buf) throws IOException {
+        chunk.headPtr = CHUNK_HEADER_SIZE;
+        chunk.tailPtr = CHUNK_HEADER_SIZE;
+        chunk.next = NULL_REF;
+        writeChunkHeader(chunk, buf);
     }
 
     private static void writeChunkHeader(Chunk chunk, ByteBuffer buf) throws IOException {
