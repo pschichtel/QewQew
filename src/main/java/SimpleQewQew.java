@@ -183,37 +183,48 @@ public class SimpleQewQew implements QewQew<byte[]> {
         return true;
     }
 
+    public int peekLength() throws IOException {
+        return peekLength(chunks.getFirst(), headBuffer);
+    }
+
+    public void peek(byte[] output) throws IOException {
+        Chunk head = chunks.getFirst();
+        peek(head, headBuffer, output);
+    }
+
     // TODO create alternative to avoid repeated byte[] allocations in real-world applications
     public byte[] peek() throws IOException {
         if (isEmpty()) {
             return null;
         }
-        Chunk head = chunks.getFirst();
-        return readEntry(head.file, headBuffer, head.headPtr);
-    }
-
-    private static byte[] readEntry(FileChannel file, ByteBuffer buf, long ptr) throws IOException {
 
         // TODO try to merge the 2 reads into one
 
-        buf.clear().limit(ENTRY_HEADER_SIZE);
-        file.position(ptr);
-        file.read(buf);
-        buf.flip();
-        final int length = getUShort(buf);
 
-        int offset = 0;
-        byte[] output = new byte[length];
-        while (offset < length) {
-            buf.clear();
-            buf.limit(Math.min(length - offset, buf.capacity()));
-            file.read(buf);
-            buf.flip();
-            buf.get(output, offset, buf.limit());
-            offset += buf.limit();
-        }
-
+        Chunk head = chunks.getFirst();
+        byte[] output = new byte[peekLength(head, headBuffer)];
+        peek(head, headBuffer, output);
         return output;
+    }
+
+    private static void peek(Chunk chunk, ByteBuffer input, byte[] output) throws IOException {
+        int offset = 0;
+        final long fileBase = chunk.headPtr + ENTRY_HEADER_SIZE;
+        while (offset < output.length) {
+            input.clear();
+            input.limit(Math.min(output.length - offset, input.capacity()));
+            int bytesRead = chunk.file.read(input, fileBase + offset);
+            input.flip();
+            input.get(output, offset, input.limit());
+            offset += bytesRead;
+        }
+    }
+
+    private static int peekLength(Chunk chunk, ByteBuffer buf) throws IOException {
+        buf.clear().limit(ENTRY_HEADER_SIZE);
+        chunk.file.read(buf, chunk.headPtr);
+        buf.flip();
+        return getUShort(buf);
     }
 
     public boolean dequeue() throws IOException {
