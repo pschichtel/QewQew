@@ -248,6 +248,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
                 Chunk onlyRemaining = chunks.getFirst();
                 resetChunk(onlyRemaining, headBuffer);
             } else {
+                // TODO necessary?
                 writeChunkHeadPtr(chunk, headBuffer);
                 Chunk depleted = chunks.removeFirst();
                 depleted.drop();
