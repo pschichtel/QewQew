@@ -316,17 +316,16 @@ public class SimpleQewQew implements QewQew<byte[]> {
             chunk = next;
             newChunk = true;
         }
-        chunk.file.position(chunk.tailPtr);
         buf.clear();
         putUShort(buf, payload.length);
         buf.put(payload, offset, Math.min(length, buf.capacity() - ENTRY_HEADER_SIZE));
         buf.flip();
-        int bytesWritten = chunk.file.write(buf);
+        int bytesWritten = chunk.file.write(buf, chunk.tailPtr);
         while (bytesWritten < length) {
             buf.clear();
             buf.put(payload, offset + bytesWritten, Math.min(length - bytesWritten, buf.capacity() - ENTRY_HEADER_SIZE));
             buf.flip();
-            bytesWritten += chunk.file.write(buf);
+            bytesWritten += chunk.file.write(buf, chunk.tailPtr + bytesWritten);
         }
 
         chunk.tailPtr = chunk.tailPtr + bytesWritten;
