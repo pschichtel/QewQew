@@ -53,8 +53,9 @@ public class SimpleQewQew implements QewQew<byte[]> {
     private static final int REF_SIZE = Short.BYTES;
     private static final int PTR_SIZE = Integer.BYTES;
     private static final int QUEUE_HEAD_SIZE = REF_SIZE;
+    private static final int CHUNK_HEADER_OFFSET = 0;
     private static final int CHUNK_HEADER_SIZE = PTR_SIZE + PTR_SIZE + REF_SIZE;
-    private static final int CHUNK_HEAD_PTR_OFFSET = 0;
+    private static final int CHUNK_HEAD_PTR_OFFSET = CHUNK_HEADER_OFFSET;
     private static final int CHUNK_TAIL_PTR_OFFSET = CHUNK_HEAD_PTR_OFFSET + PTR_SIZE;
     private static final int CHUNK_NEXT_REF_OFFSET = CHUNK_TAIL_PTR_OFFSET + PTR_SIZE;
     private static final int ENTRY_HEADER_SIZE = Short.BYTES;
@@ -68,6 +69,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private final Head head;
     private final Deque<Chunk> chunks;
+    private int cachedHeadSize;
 
     private final long chunkSize;
     private final ByteBuffer headBuffer;
@@ -84,6 +86,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
         this.head = openQueue(queuePath, headBuffer);
         this.prefix = queuePath.toAbsolutePath().getParent();
         this.chunks = loadChunks(this.prefix, headBuffer, this.head.first);
+        this.cachedHeadSize = -1;
 
         this.chunkSize = chunkSize;
     }
@@ -192,7 +195,6 @@ public class SimpleQewQew implements QewQew<byte[]> {
         peek(head, headBuffer, output);
     }
 
-    // TODO create alternative to avoid repeated byte[] allocations in real-world applications
     public byte[] peek() throws IOException {
         if (isEmpty()) {
             return null;
@@ -220,25 +222,25 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
     }
 
-    private static int peekLength(Chunk chunk, ByteBuffer buf) throws IOException {
-        buf.clear().limit(ENTRY_HEADER_SIZE);
-        chunk.file.read(buf, chunk.headPtr);
-        buf.flip();
-        return getUShort(buf);
+    private int peekLength(Chunk chunk, ByteBuffer buf) throws IOException {
+        if (cachedHeadSize == -1) {
+            buf.clear().limit(ENTRY_HEADER_SIZE);
+            chunk.file.read(buf, chunk.headPtr);
+            buf.flip();
+            cachedHeadSize = getUShort(buf);
+        }
+        return cachedHeadSize;
     }
 
     public boolean dequeue() throws IOException {
 
-        // TODO a common pattern is to peek() and dequeue(). this can be used to avoid reading the entry header again by caching the length of the previously peek'ed entry.
-
         if (isEmpty()) {
             return false;
         }
+
         Chunk chunk = chunks.getFirst();
-        headBuffer.clear().limit(ENTRY_HEADER_SIZE);
-        chunk.file.read(headBuffer, chunk.headPtr);
-        headBuffer.flip();
-        int length = getUShort(headBuffer);
+        int length = peekLength(chunk, headBuffer);
+        cachedHeadSize = -1;
         chunk.headPtr = chunk.headPtr + ENTRY_HEADER_SIZE + length;
 
         if (chunk.headPtr >= chunk.tailPtr) {
@@ -271,6 +273,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
             writeQueueFirst(head, tailBuffer);
             chunks.addLast(chunk);
             newChunk = true;
+            cachedHeadSize = input.length;
         } else {
             chunk = chunks.getLast();
         }
@@ -347,7 +350,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
         putUInt(buf, chunk.tailPtr);
         putUShort(buf, chunk.next);
         buf.flip();
-        chunk.file.write(buf, CHUNK_HEAD_PTR_OFFSET);
+        chunk.file.write(buf, CHUNK_HEADER_OFFSET);
     }
 
     private static void writeChunkHeadPtr(Chunk chunk, ByteBuffer buf) throws IOException {
