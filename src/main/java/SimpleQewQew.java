@@ -65,8 +65,6 @@ public class SimpleQewQew implements QewQew<byte[]> {
     private static final int MAX_ID = ((short)-1) & 0xFFFF;
     private static final long MAX_CHUNK_SIZE = 0xFFFFFFFFL;
 
-    private final Path prefix;
-
     private final Head head;
     private final Deque<Chunk> chunks;
     private int cachedHeadSize;
@@ -84,15 +82,15 @@ public class SimpleQewQew implements QewQew<byte[]> {
         this.tailBuffer = ByteBuffer.allocateDirect(ENTRY_HEADER_SIZE + bufferSize);
 
         this.head = openQueue(queuePath, headBuffer);
-        this.prefix = queuePath.toAbsolutePath().getParent();
-        this.chunks = loadChunks(this.prefix, headBuffer, this.head.first);
+        this.chunks = loadChunks(this.head, headBuffer, this.head.first);
         this.cachedHeadSize = -1;
 
         this.chunkSize = chunkSize;
     }
 
     private static Head openQueue(Path path, ByteBuffer buf) throws IOException {
-        final FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, SYNC, DSYNC);
+        final Path absPath = path.toAbsolutePath();
+        final FileChannel file = FileChannel.open(absPath, CREATE, WRITE, READ, SYNC, DSYNC);
         final FileLock lock;
         try {
             lock = file.tryLock();
@@ -111,15 +109,15 @@ public class SimpleQewQew implements QewQew<byte[]> {
             buf.flip();
             next = getUShort(buf);
         }
-        return new Head(path, file, lock, next);
+        return new Head(absPath, file, lock, next);
     }
 
-    private static Deque<Chunk> loadChunks(Path prefix, ByteBuffer buf, int next) throws IOException {
+    private static Deque<Chunk> loadChunks(Head head, ByteBuffer buf, int next) throws IOException {
 
         Deque<Chunk> chunks = new ArrayDeque<>();
 
         while (next != NULL_REF) {
-            Chunk chunk = openChunk(prefix, buf, next, false);
+            Chunk chunk = openChunk(head, buf, next, false);
             chunks.addLast(chunk);
             next = chunk.next;
         }
@@ -127,8 +125,8 @@ public class SimpleQewQew implements QewQew<byte[]> {
         return chunks;
     }
 
-    private static Chunk openChunk(Path prefix, ByteBuffer buf, int id, boolean forceNew) throws IOException {
-        Path path = resolveNextRef(prefix, id);
+    private static Chunk openChunk(Head head, ByteBuffer buf, int id, boolean forceNew) throws IOException {
+        Path path = resolveNextRef(head, id);
         FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, SYNC, DSYNC);
 
         if (forceNew) {
@@ -155,8 +153,10 @@ public class SimpleQewQew implements QewQew<byte[]> {
         return new Chunk(path, file, headPtr, tailPtr, id, next);
     }
 
-    private static Path resolveNextRef(Path prefix, int id) {
-        return prefix.resolve((id % MAX_ID) + SUFFIX);
+    private static Path resolveNextRef(Head head, int id) {
+        Path parent = head.path.getParent();
+        String name = head.path.getFileName().toString();
+        return parent.resolve(name + "." + (id % MAX_ID));
     }
 
     public boolean isEmpty() {
@@ -267,7 +267,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
         boolean newChunk = false;
         Chunk chunk;
         if (chunks.isEmpty()) {
-            chunk = openChunk(prefix, tailBuffer, 1, true);
+            chunk = openChunk(this.head, tailBuffer, 1, true);
             head.first = chunk.id;
             writeQueueFirst(head, tailBuffer);
             chunks.addLast(chunk);
@@ -310,7 +310,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
             }
             chunk.next = nextId;
             writeChunkNextRef(chunk, buf);
-            Chunk next = openChunk(prefix, buf, nextId, true);
+            Chunk next = openChunk(this.head, buf, nextId, true);
             chunks.addLast(next);
             chunk = next;
             newChunk = true;
