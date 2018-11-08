@@ -22,7 +22,7 @@
  */
 import java.io.Closeable;
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
@@ -31,12 +31,6 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Iterator;
-
-import static java.nio.file.StandardOpenOption.CREATE;
-import static java.nio.file.StandardOpenOption.DSYNC;
-import static java.nio.file.StandardOpenOption.READ;
-import static java.nio.file.StandardOpenOption.SYNC;
-import static java.nio.file.StandardOpenOption.WRITE;
 
 /**
  * queue   := chunk*
@@ -61,7 +55,6 @@ public class SimpleQewQew implements QewQew<byte[]> {
     private static final int ENTRY_HEADER_SIZE = Short.BYTES;
 
     private static final int NULL_REF = 0;
-    private static final String SUFFIX = ".qew";
     private static final int MAX_ID = ((short)-1) & 0xFFFF;
     private static final long MAX_CHUNK_SIZE = 0xFFFFFFFFL;
 
@@ -70,30 +63,29 @@ public class SimpleQewQew implements QewQew<byte[]> {
     private int cachedHeadSize;
 
     private final long chunkSize;
-    private final ByteBuffer headBuffer;
-    private final ByteBuffer tailBuffer;
+    private final byte[] buffer;
 
     public SimpleQewQew(Path queuePath, int bufferSize, long chunkSize) throws IOException {
         if (chunkSize > MAX_CHUNK_SIZE) {
             throw new IllegalArgumentException("chunkSize must fit into 32 bits!");
         }
 
-        this.headBuffer = ByteBuffer.allocateDirect(ENTRY_HEADER_SIZE + bufferSize);
-        this.tailBuffer = ByteBuffer.allocateDirect(ENTRY_HEADER_SIZE + bufferSize);
+        this.buffer = new byte[bufferSize];
 
-        this.head = openQueue(queuePath, headBuffer);
-        this.chunks = loadChunks(this.head, headBuffer, this.head.first);
+        this.head = openQueue(queuePath, this.buffer);
+        this.chunks = loadChunks(this.head, this.buffer, this.head.first);
         this.cachedHeadSize = -1;
 
         this.chunkSize = chunkSize;
     }
 
-    private static Head openQueue(Path path, ByteBuffer buf) throws IOException {
+    private static Head openQueue(Path path, byte[] buf) throws IOException {
         final Path absPath = path.toAbsolutePath();
-        final FileChannel file = FileChannel.open(absPath, CREATE, WRITE, READ, SYNC, DSYNC);
+        final RandomAccessFile file = new RandomAccessFile(absPath.toFile(), "rwd");
         final FileLock lock;
+        FileChannel channel = file.getChannel();
         try {
-            lock = file.tryLock();
+            lock = channel.tryLock();
         } catch (OverlappingFileLockException e) {
             throw new QewAlreadyOpenException(e);
         }
@@ -101,18 +93,16 @@ public class SimpleQewQew implements QewQew<byte[]> {
             throw new QewAlreadyOpenException();
         }
         final int next;
-        if (file.size() == 0) {
+        if (file.length() == 0) {
             next = NULL_REF;
         } else {
-            buf.clear().limit(QUEUE_HEAD_SIZE);
-            file.read(buf);
-            buf.flip();
-            next = getUShort(buf);
+            file.readFully(buf, 0, QUEUE_HEAD_SIZE);
+            next = getUShort(buf, 0);
         }
         return new Head(absPath, file, lock, next);
     }
 
-    private static Deque<Chunk> loadChunks(Head head, ByteBuffer buf, int next) throws IOException {
+    private static Deque<Chunk> loadChunks(Head head, byte[] buf, int next) throws IOException {
 
         Deque<Chunk> chunks = new ArrayDeque<>();
 
@@ -125,32 +115,37 @@ public class SimpleQewQew implements QewQew<byte[]> {
         return chunks;
     }
 
-    private static Chunk openChunk(Head head, ByteBuffer buf, int id, boolean forceNew) throws IOException {
+    private static Chunk openChunk(Head head, byte[] buf, int id, boolean forceNew) throws IOException {
         Path path = resolveNextRef(head, id);
-        FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, SYNC, DSYNC);
+        RandomAccessFile file = open(path);
 
         if (forceNew) {
-            file.truncate(0);
+            file.setLength(0);
         }
 
         final long headPtr;
         final long tailPtr;
         final int next;
-        if (file.size() == 0) {
+        if (file.length() == 0) {
             headPtr = CHUNK_HEADER_SIZE;
             tailPtr = CHUNK_HEADER_SIZE;
             next = NULL_REF;
         } else {
-            buf.clear();
-            buf.limit(CHUNK_HEADER_SIZE);
-            file.read(buf, 0);
-            buf.flip();
-            headPtr = getUInt(buf);
-            tailPtr = getUInt(buf);
-            next = getUShort(buf);
+            file.seek(CHUNK_HEADER_OFFSET);
+            file.readFully(buf, 0, CHUNK_HEADER_SIZE);
+            headPtr = getUInt(buf, CHUNK_HEAD_PTR_OFFSET);
+            tailPtr = getUInt(buf, CHUNK_TAIL_PTR_OFFSET);
+            next = getUShort(buf, CHUNK_NEXT_REF_OFFSET);
         }
 
         return new Chunk(path, file, headPtr, tailPtr, id, next);
+    }
+
+    private static RandomAccessFile open(Path path) throws IOException {
+        if (Files.notExists(path)) {
+            Files.createFile(path);
+        }
+        return new RandomAccessFile(path.toFile(), "rwd");
     }
 
     private static Path resolveNextRef(Head head, int id) {
@@ -175,10 +170,10 @@ public class SimpleQewQew implements QewQew<byte[]> {
             return false;
         }
         head.first = NULL_REF;
-        writeQueueFirst(head, headBuffer);
+        writeQueueFirst(head, buffer);
         Iterator<Chunk> it = chunks.iterator();
         Chunk first = it.next();
-        resetChunk(first, headBuffer);
+        resetChunk(first, buffer);
         while (it.hasNext()) {
             it.next().drop();
             it.remove();
@@ -187,12 +182,16 @@ public class SimpleQewQew implements QewQew<byte[]> {
     }
 
     public int peekLength() throws IOException {
-        return peekLength(chunks.getFirst(), headBuffer);
+        return peekLength(chunks.getFirst(), buffer);
     }
 
-    public void peek(byte[] output) throws IOException {
+    public int peek(byte[] output) throws IOException {
+        return peek(output, 0, output.length);
+    }
+
+    public int peek(byte[] output, int offset, int length) throws IOException {
         Chunk head = chunks.getFirst();
-        peek(head, headBuffer, output);
+        return peek(head, output, offset, length, false);
     }
 
     public byte[] peek() throws IOException {
@@ -204,30 +203,27 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
 
         Chunk head = chunks.getFirst();
-        byte[] output = new byte[peekLength(head, headBuffer)];
-        peek(head, headBuffer, output);
+        byte[] output = new byte[peekLength(head, buffer)];
+        peek(head, output, 0, output.length, true);
         return output;
     }
 
-    private static void peek(Chunk chunk, ByteBuffer input, byte[] output) throws IOException {
-        int offset = 0;
+    private static int peek(Chunk chunk, byte[] output, int offset, int length, boolean fully) throws IOException {
         final long fileBase = chunk.headPtr + ENTRY_HEADER_SIZE;
-        while (offset < output.length) {
-            input.clear();
-            input.limit(Math.min(output.length - offset, input.capacity()));
-            int bytesRead = chunk.file.read(input, fileBase + offset);
-            input.flip();
-            input.get(output, offset, input.limit());
-            offset += bytesRead;
+        chunk.file.seek(fileBase);
+        if (fully) {
+            chunk.file.readFully(output, offset, length);
+            return -1;
+        } else {
+            return chunk.file.read(output, offset, length);
         }
     }
 
-    private int peekLength(Chunk chunk, ByteBuffer buf) throws IOException {
+    private int peekLength(Chunk chunk, byte[] buf) throws IOException {
         if (cachedHeadSize == -1) {
-            buf.clear().limit(ENTRY_HEADER_SIZE);
-            chunk.file.read(buf, chunk.headPtr);
-            buf.flip();
-            cachedHeadSize = getUShort(buf);
+            chunk.file.seek(chunk.headPtr);
+            chunk.file.readFully(buf, 0, ENTRY_HEADER_SIZE);
+            cachedHeadSize = getUShort(buf, 0);
         }
         return cachedHeadSize;
     }
@@ -239,22 +235,22 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
 
         Chunk chunk = chunks.getFirst();
-        int length = peekLength(chunk, headBuffer);
+        int length = peekLength(chunk, buffer);
         cachedHeadSize = -1;
         chunk.headPtr = chunk.headPtr + ENTRY_HEADER_SIZE + length;
 
         if (chunk.headPtr >= chunk.tailPtr) {
             if (chunks.size() == 1) {
                 Chunk onlyRemaining = chunks.getFirst();
-                resetChunk(onlyRemaining, headBuffer);
+                resetChunk(onlyRemaining, buffer);
             } else {
-                writeQueueFirst(head, headBuffer);
+                writeQueueFirst(head, buffer);
                 Chunk depleted = chunks.removeFirst();
                 depleted.drop();
                 head.first = depleted.next;
             }
         } else {
-            writeChunkHeadPtr(chunk, headBuffer);
+            writeChunkHeadPtr(chunk, buffer);
         }
         return true;
     }
@@ -267,9 +263,9 @@ public class SimpleQewQew implements QewQew<byte[]> {
         boolean newChunk = false;
         Chunk chunk;
         if (chunks.isEmpty()) {
-            chunk = openChunk(this.head, tailBuffer, 1, true);
+            chunk = openChunk(this.head, this.buffer, 1, true);
             head.first = chunk.id;
-            writeQueueFirst(head, tailBuffer);
+            writeQueueFirst(head, buffer);
             chunks.addLast(chunk);
             newChunk = true;
             cachedHeadSize = input.length;
@@ -277,7 +273,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
             chunk = chunks.getLast();
         }
 
-        writeToChunk(chunk, tailBuffer, input, offset, length, newChunk);
+        writeToChunk(chunk, this.buffer, input, offset, length, newChunk);
     }
 
     @Override
@@ -302,7 +298,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
     }
 
-    private void writeToChunk(Chunk chunk, ByteBuffer buf, byte[] payload, int offset, int length, boolean newChunk) throws IOException {
+    private void writeToChunk(Chunk chunk, byte[] buf, byte[] payload, int offset, int length, boolean newChunk) throws IOException {
         while (chunk.tailPtr + payload.length >= chunkSize) {
             int nextId = (chunk.id + 1) % MAX_ID;
             if (nextId == 0) {
@@ -310,24 +306,17 @@ public class SimpleQewQew implements QewQew<byte[]> {
             }
             chunk.next = nextId;
             writeChunkNextRef(chunk, buf);
-            Chunk next = openChunk(this.head, buf, nextId, true);
+            Chunk next = openChunk(this.head, this.buffer, nextId, true);
             chunks.addLast(next);
             chunk = next;
             newChunk = true;
         }
-        buf.clear();
-        putUShort(buf, payload.length);
-        buf.put(payload, offset, Math.min(length, buf.capacity() - ENTRY_HEADER_SIZE));
-        buf.flip();
-        int bytesWritten = chunk.file.write(buf, chunk.tailPtr);
-        while (bytesWritten < length) {
-            buf.clear();
-            buf.put(payload, offset + bytesWritten, Math.min(length - bytesWritten, buf.capacity() - ENTRY_HEADER_SIZE));
-            buf.flip();
-            bytesWritten += chunk.file.write(buf, chunk.tailPtr + bytesWritten);
-        }
+        chunk.file.seek(chunk.tailPtr);
+        putUShort(buf, 0, payload.length);
+        chunk.file.write(buf, 0, ENTRY_HEADER_SIZE);
+        chunk.file.write(payload, offset, length);
 
-        chunk.tailPtr = chunk.tailPtr + bytesWritten;
+        chunk.tailPtr = chunk.tailPtr + ENTRY_HEADER_SIZE + payload.length;
         if (newChunk) {
             writeChunkHeader(chunk, buf);
         } else {
@@ -335,74 +324,79 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
     }
 
-    private static void resetChunk(Chunk chunk, ByteBuffer buf) throws IOException {
+    private static void resetChunk(Chunk chunk, byte[] buf) throws IOException {
         chunk.headPtr = CHUNK_HEADER_SIZE;
         chunk.tailPtr = CHUNK_HEADER_SIZE;
         chunk.next = NULL_REF;
         writeChunkHeader(chunk, buf);
     }
 
-    private static void writeChunkHeader(Chunk chunk, ByteBuffer buf) throws IOException {
-        buf.clear();
-        putUInt(buf, chunk.headPtr);
-        putUInt(buf, chunk.tailPtr);
-        putUShort(buf, chunk.next);
-        buf.flip();
-        chunk.file.write(buf, CHUNK_HEADER_OFFSET);
+    private static void writeChunkHeader(Chunk chunk, byte[] buf) throws IOException {
+        putUInt(buf, CHUNK_HEAD_PTR_OFFSET, chunk.headPtr);
+        putUInt(buf, CHUNK_TAIL_PTR_OFFSET, chunk.tailPtr);
+        putUShort(buf, CHUNK_NEXT_REF_OFFSET, chunk.next);
+        chunk.file.seek(CHUNK_HEADER_OFFSET);
+        chunk.file.write(buf, 0, CHUNK_HEADER_SIZE);
     }
 
-    private static void writeChunkHeadPtr(Chunk chunk, ByteBuffer buf) throws IOException {
-        buf.clear();
-        putUInt(buf, chunk.headPtr);
-        buf.flip();
-        chunk.file.write(buf, CHUNK_HEAD_PTR_OFFSET);
+    private static void writeChunkHeadPtr(Chunk chunk, byte[] buf) throws IOException {
+        chunk.file.seek(CHUNK_HEAD_PTR_OFFSET);
+        putUInt(buf, 0, chunk.headPtr);
+        chunk.file.write(buf, 0, PTR_SIZE);
     }
 
-    private static void writeChunkTailPtr(Chunk chunk, ByteBuffer buf) throws IOException {
-        buf.clear();
-        putUInt(buf, chunk.tailPtr);
-        buf.flip();
-        chunk.file.write(buf, CHUNK_TAIL_PTR_OFFSET);
+    private static void writeChunkTailPtr(Chunk chunk, byte[] buf) throws IOException {
+        chunk.file.seek(CHUNK_TAIL_PTR_OFFSET);
+        putUInt(buf, 0, chunk.tailPtr);
+        chunk.file.write(buf, 0, PTR_SIZE);
     }
 
 
-    private static void writeChunkNextRef(Chunk chunk, ByteBuffer buf) throws IOException {
-        buf.clear();
-        putUShort(buf, chunk.next);
-        buf.flip();
-        chunk.file.write(buf, CHUNK_NEXT_REF_OFFSET);
+    private static void writeChunkNextRef(Chunk chunk, byte[] buf) throws IOException {
+        chunk.file.seek(CHUNK_NEXT_REF_OFFSET);
+        putUShort(buf, 0, chunk.next);
+        chunk.file.write(buf, 0, REF_SIZE);
     }
 
-    private static void writeQueueFirst(Head head, ByteBuffer buf) throws IOException {
-        buf.clear();
-        putUShort(buf, head.first);
-        buf.flip();
-        head.file.write(buf, 0);
+    private static void writeQueueFirst(Head head, byte[] buf) throws IOException {
+        head.file.seek(0);
+        putUShort(buf, 0, head.first);
+        head.file.write(buf, 0, REF_SIZE);
     }
 
-    private static int getUShort(ByteBuffer buf) {
-        return buf.getShort() & 0xFFFF;
+    private static void putUShort(byte[] buf, int offset, int i) {
+        int value = i & 0xFFFF;
+        buf[offset    ] = (byte) (value >> 8);
+        buf[offset + 1] = (byte) value;
     }
 
-    private static void putUShort(ByteBuffer buf, int i) {
-        buf.putShort((short) (i & 0xFFFF));
+    private static int getUShort(byte[] buffer, int offset) {
+        return ((buffer[offset] & 0xFF) << 8) + (buffer[offset + 1] & 0xFF);
     }
 
-    private static long getUInt(ByteBuffer buf) {
-        return buf.getInt() & 0xFFFFFFFFL;
+    private static void putUInt(byte[] buf, int offset, long i) {
+        int value = (int) (i & 0xFFFFFFFFL);
+        buf[offset    ] = (byte) (value >> 24);
+        buf[offset + 1] = (byte) (value >> 16);
+        buf[offset + 2] = (byte) (value >> 8);
+        buf[offset + 3] = (byte) value;
     }
 
-    private static void putUInt(ByteBuffer buf, long i) {
-        buf.putInt((int) (i & 0xFFFFFFFFL));
+    /** Reads an {@code int} from the {@code byte[]}. */
+    private static long getUInt(byte[] buffer, int offset) {
+        return ((buffer[offset    ] & 0xFFL) << 24)
+                +  ((buffer[offset + 1] & 0xFFL) << 16)
+                +  ((buffer[offset + 2] & 0xFFL) << 8)
+                +   (buffer[offset + 3] & 0xFFL);
     }
 
     private static final class Head implements Closeable {
         public final Path path;
-        public final FileChannel file;
+        public final RandomAccessFile file;
         public final FileLock lock;
         public int first;
 
-        public Head(Path path, FileChannel file, FileLock lock, int first) throws IOException {
+        public Head(Path path, RandomAccessFile file, FileLock lock, int first) throws IOException {
             this.path = path;
             this.file = file;
             this.lock = lock;
@@ -417,14 +411,14 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static final class Chunk implements Closeable {
         public final Path path;
-        public final FileChannel file;
+        public final RandomAccessFile file;
         public long headPtr;
         public long tailPtr;
         public final int id;
         public int next;
 
-        public Chunk(Path path, FileChannel file, long headPtr, long tailPtr, int id, int next) throws IOException {
-            file.lock();
+        public Chunk(Path path, RandomAccessFile file, long headPtr, long tailPtr, int id, int next) throws IOException {
+            file.getChannel().lock();
             this.path = path;
             this.file = file;
             this.id = id;
