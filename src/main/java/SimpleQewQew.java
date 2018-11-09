@@ -35,7 +35,6 @@ import java.util.Iterator;
 import static java.nio.file.StandardOpenOption.CREATE;
 import static java.nio.file.StandardOpenOption.DSYNC;
 import static java.nio.file.StandardOpenOption.READ;
-import static java.nio.file.StandardOpenOption.SYNC;
 import static java.nio.file.StandardOpenOption.WRITE;
 
 /**
@@ -84,7 +83,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static Head openQueue(Path path) throws IOException {
         final Path absPath = path.toAbsolutePath();
-        final FileChannel file = FileChannel.open(absPath, CREATE, WRITE, READ, SYNC, DSYNC);
+        final FileChannel file = FileChannel.open(absPath, CREATE, WRITE, READ, DSYNC);
         final FileLock lock;
         try {
             lock = file.tryLock();
@@ -116,7 +115,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static Chunk openChunk(Head head, int id, boolean forceNew, long chunkSize) throws IOException {
         final Path path = resolveNextRef(head, id);
-        final FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, SYNC, DSYNC);
+        final FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, DSYNC);
         final FileLock lock = file.lock();
         file.truncate(chunkSize);
         final MappedByteBuffer map = file.map(FileChannel.MapMode.READ_WRITE, 0, chunkSize);
