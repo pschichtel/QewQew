@@ -39,7 +39,7 @@ class SimpleQewQewTest {
 
     @Test
     void testQueue() throws IOException {
-        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
+        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
             q.clear();
             assertTrue(q.isEmpty());
 
@@ -56,8 +56,8 @@ class SimpleQewQewTest {
 
     @Test
     void testMultipleOpen() throws IOException {
-        try (SimpleQewQew ignored = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
-            assertThrows(QewAlreadyOpenException.class, () -> new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE));
+        try (SimpleQewQew ignored = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
+            assertThrows(QewAlreadyOpenException.class, () -> new SimpleQewQew(HEAD_PATH, CHUNK_SIZE));
         }
     }
 
@@ -65,7 +65,7 @@ class SimpleQewQewTest {
     void testManyWrites() throws IOException {
         Random r = new Random(1);
         Queue<byte[]> expectedBuffers = new ArrayDeque<>();
-        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
+        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
             q.clear();
             for (int i = 0; i < 1000; ++i) {
                 byte[] buf = buf(r.nextInt(((short) -1) & 0xFFFF), r.nextInt(((short) -1) & 0xFFFF));
@@ -76,7 +76,7 @@ class SimpleQewQewTest {
         }
 
 
-        try (SimpleQewQew actualBuffers = new SimpleQewQew(HEAD_PATH, BUFFER_SIZE, CHUNK_SIZE)) {
+        try (SimpleQewQew actualBuffers = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
             while (!actualBuffers.isEmpty()) {
                 byte[] expected = expectedBuffers.remove();
                 byte[] actual = actualBuffers.peek();

@@ -69,7 +69,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private final long chunkSize;
 
-    public SimpleQewQew(Path queuePath, int bufferSize, long chunkSize) throws IOException {
+    public SimpleQewQew(Path queuePath, long chunkSize) throws IOException {
         if (chunkSize > MAX_CHUNK_SIZE) {
             throw new IllegalArgumentException("chunkSize must fit into 32 bits!");
         }
