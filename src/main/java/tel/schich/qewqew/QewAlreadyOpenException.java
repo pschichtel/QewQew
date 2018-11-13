@@ -20,43 +20,16 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-import java.io.Closeable;
+package tel.schich.qewqew;
+
 import java.io.IOException;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.channels.OverlappingFileLockException;
 
-final class Chunk implements Closeable {
-    final Path path;
-    final FileChannel file;
-    int headPtr;
-    int tailPtr;
-    final FileLock lock;
-    final int id;
-    int next;
-    final MappedByteBuffer map;
-
-    Chunk(Path path, FileChannel file, FileLock lock, MappedByteBuffer map, int headPtr, int tailPtr, int id, int next) {
-        this.path = path;
-        this.file = file;
-        this.lock = lock;
-        this.id = id;
-        this.headPtr = headPtr;
-        this.tailPtr = tailPtr;
-        this.next = next;
-        this.map = map;
+public class QewAlreadyOpenException extends IOException {
+    public QewAlreadyOpenException() {
+        super();
     }
-
-    void drop() throws IOException {
-        map.force();
-        close();
-        Files.delete(path);
-    }
-
-    @Override
-    public void close() throws IOException {
-        file.close();
+    public QewAlreadyOpenException(Throwable cause) {
+        super(cause);
     }
 }

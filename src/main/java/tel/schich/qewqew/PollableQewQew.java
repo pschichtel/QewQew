@@ -20,14 +20,12 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-import java.io.IOException;
-import java.nio.channels.OverlappingFileLockException;
+package tel.schich.qewqew;
 
-public class QewAlreadyOpenException extends IOException {
-    public QewAlreadyOpenException() {
-        super();
-    }
-    public QewAlreadyOpenException(Throwable cause) {
-        super(cause);
-    }
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
+
+public interface PollableQewQew<E> extends QewQew<E> {
+    boolean poll(long timeout, TimeUnit unit) throws InterruptedException;
+    E peek(long timeout, TimeUnit unit) throws IOException, InterruptedException;
 }

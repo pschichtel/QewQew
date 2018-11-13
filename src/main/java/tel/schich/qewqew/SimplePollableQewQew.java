@@ -20,7 +20,10 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+package tel.schich.qewqew;
+
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -40,6 +43,10 @@ public class SimplePollableQewQew<E> implements PollableQewQew<E> {
         this.qew = qew;
         this.lock = new ReentrantLock(fair);
         this.nonEmpty = this.lock.newCondition();
+    }
+
+    public static PollableQewQew<byte[]> from(Path queuePath, long chunkSize) throws IOException {
+        return new SimplePollableQewQew<>(new SimpleQewQew(queuePath, chunkSize));
     }
 
     @Override

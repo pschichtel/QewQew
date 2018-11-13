@@ -20,13 +20,33 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+package tel.schich.qewqew;
+
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.Path;
 
-public interface QewQew<E> extends Closeable {
-    E peek() throws IOException;
-    boolean dequeue() throws IOException;
-    void enqueue(E elem) throws IOException;
-    boolean isEmpty();
-    boolean clear() throws IOException;
+final class Head implements Closeable {
+    final Path path;
+    final FileChannel file;
+    final FileLock lock;
+    final MappedByteBuffer map;
+
+    int first;
+
+    Head(Path path, FileChannel file, FileLock lock, MappedByteBuffer map, int first) {
+        this.path = path;
+        this.file = file;
+        this.lock = lock;
+        this.first = first;
+        this.map = map;
+    }
+
+    @Override
+    public void close() throws IOException {
+        file.close();
+    }
 }
