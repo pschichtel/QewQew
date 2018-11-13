@@ -49,15 +49,15 @@ import static java.nio.file.StandardOpenOption.WRITE;
  * data    := 'arbitrary many bytes'
  */
 public class SimpleQewQew implements QewQew<byte[]> {
-    private static final int REF_SIZE = Short.BYTES;
-    private static final int PTR_SIZE = Integer.BYTES;
-    private static final int QUEUE_HEAD_SIZE = REF_SIZE;
-    private static final int CHUNK_HEADER_OFFSET = 0;
-    private static final int CHUNK_HEADER_SIZE = PTR_SIZE + PTR_SIZE + REF_SIZE;
-    private static final int CHUNK_HEAD_PTR_OFFSET = CHUNK_HEADER_OFFSET;
-    private static final int CHUNK_TAIL_PTR_OFFSET = CHUNK_HEAD_PTR_OFFSET + PTR_SIZE;
-    private static final int CHUNK_NEXT_REF_OFFSET = CHUNK_TAIL_PTR_OFFSET + PTR_SIZE;
-    private static final int ENTRY_HEADER_SIZE = Short.BYTES;
+    static final int REF_SIZE = Short.BYTES;
+    static final int PTR_SIZE = Integer.BYTES;
+    static final int QUEUE_HEAD_SIZE = REF_SIZE;
+    static final int CHUNK_HEADER_OFFSET = 0;
+    static final int CHUNK_HEADER_SIZE = PTR_SIZE + PTR_SIZE + REF_SIZE;
+    static final int CHUNK_HEAD_PTR_OFFSET = CHUNK_HEADER_OFFSET;
+    static final int CHUNK_TAIL_PTR_OFFSET = CHUNK_HEAD_PTR_OFFSET + PTR_SIZE;
+    static final int CHUNK_NEXT_REF_OFFSET = CHUNK_TAIL_PTR_OFFSET + PTR_SIZE;
+    static final int ENTRY_HEADER_SIZE = Short.BYTES;
 
     private static final int NULL_REF = 0;
     private static final int MAX_ID = ((short)-1) & 0xFFFF;
@@ -79,6 +79,14 @@ public class SimpleQewQew implements QewQew<byte[]> {
         this.cachedHeadSize = -1;
 
         this.chunkSize = chunkSize;
+    }
+
+    public int countChunks() {
+        if (isEmpty()) {
+            return 0;
+        } else {
+            return this.chunks.size();
+        }
     }
 
     private static Head openQueue(Path path) throws IOException {
@@ -117,20 +125,20 @@ public class SimpleQewQew implements QewQew<byte[]> {
         final Path path = resolveNextRef(head, id);
         final FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, DSYNC);
         final FileLock lock = file.lock();
-        file.truncate(chunkSize);
         final MappedByteBuffer map = file.map(FileChannel.MapMode.READ_WRITE, 0, chunkSize);
 
         final int headPtr;
         final int tailPtr;
         final int next;
         if (forceNew) {
+            file.truncate(chunkSize);
             headPtr = CHUNK_HEADER_SIZE;
             tailPtr = CHUNK_HEADER_SIZE;
             next = NULL_REF;
         } else {
             map.position(CHUNK_HEADER_OFFSET);
-            headPtr = (int) getUInt(map, CHUNK_HEAD_PTR_OFFSET);
-            tailPtr = (int) getUInt(map, CHUNK_TAIL_PTR_OFFSET);
+            headPtr = map.getInt(CHUNK_HEAD_PTR_OFFSET);
+            tailPtr = map.getInt(CHUNK_TAIL_PTR_OFFSET);
             next = getUShort(map, CHUNK_NEXT_REF_OFFSET);
         }
 
@@ -279,7 +287,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
     }
 
     private void writeToChunk(Chunk chunk, byte[] payload, int offset, int length, boolean newChunk) throws IOException {
-        while (chunk.tailPtr + payload.length >= chunkSize) {
+        while (chunk.tailPtr + ENTRY_HEADER_SIZE + length >= chunkSize) {
             int nextId = (chunk.id + 1) % MAX_ID;
             if (nextId == 0) {
                 nextId++;
@@ -312,17 +320,17 @@ public class SimpleQewQew implements QewQew<byte[]> {
     }
 
     private static void writeChunkHeader(Chunk chunk) {
-        putUInt(chunk.map, CHUNK_HEAD_PTR_OFFSET, chunk.headPtr);
-        putUInt(chunk.map, CHUNK_TAIL_PTR_OFFSET, chunk.tailPtr);
-        putUShort(chunk.map, CHUNK_NEXT_REF_OFFSET, chunk.next);
+        writeChunkHeadPtr(chunk);
+        writeChunkTailPtr(chunk);
+        writeChunkNextRef(chunk);
     }
 
     private static void writeChunkHeadPtr(Chunk chunk) {
-        putUInt(chunk.map, CHUNK_HEAD_PTR_OFFSET, chunk.headPtr);
+        chunk.map.putInt(CHUNK_HEAD_PTR_OFFSET, chunk.headPtr);
     }
 
     private static void writeChunkTailPtr(Chunk chunk) {
-        putUInt(chunk.map, CHUNK_TAIL_PTR_OFFSET, chunk.tailPtr);
+        chunk.map.putInt(CHUNK_TAIL_PTR_OFFSET, chunk.tailPtr);
     }
 
 
@@ -341,14 +349,6 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static void putUShort(ByteBuffer buf, int index, int i) {
         buf.putShort(index, (short) (i & 0xFFFF));
-    }
-
-    private static long getUInt(ByteBuffer buf, int index) {
-        return buf.getInt(index) & 0xFFFFFFFFL;
-    }
-
-    private static void putUInt(ByteBuffer buf, int index, long i) {
-        buf.putInt(index, (int) (i & 0xFFFFFFFFL));
     }
 
 }

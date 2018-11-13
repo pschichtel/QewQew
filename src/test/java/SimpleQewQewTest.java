@@ -34,7 +34,6 @@ class SimpleQewQewTest {
 
     static final Path HEAD_PATH = Paths.get("qew-head.qew");
 
-    public static final int BUFFER_SIZE = 4096;
     public static final int CHUNK_SIZE = 1024;
 
     @Test
@@ -44,13 +43,44 @@ class SimpleQewQewTest {
             assertTrue(q.isEmpty());
 
             q.enqueue(buf('a', 'b', 'c'));
-            assertTrue(!q.isEmpty());
+            assertFalse(q.isEmpty());
 
             String s = new String(q.peek());
             assertEquals("abc", s);
 
             assertTrue(q.dequeue());
             assertTrue(q.isEmpty());
+        }
+    }
+
+    /**
+     * This test verifies the chunk size upper bound.
+     * The chunk needs enough space fit not just the payload, but its length as well.
+     */
+    @Test
+    void testChunkSizeEdge() throws IOException {
+        final byte[] payload = {1, 2, 3};
+        // chunk fits its header, 1 entry header (length) and 2 same-size payloads
+        final int chunkSize = SimpleQewQew.CHUNK_HEADER_SIZE + SimpleQewQew.ENTRY_HEADER_SIZE + 2 * payload.length;
+
+        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, chunkSize)) {
+            q.clear();
+            assertTrue(q.isEmpty());
+
+            // payload fits once into a chunk
+            q.enqueue(payload);
+            assertFalse(q.isEmpty());
+            assertEquals(1, q.countChunks());
+
+            // but not twice
+            q.enqueue(payload);
+            assertEquals(2, q.countChunks());
+
+            assertTrue(q.dequeue());
+            assertFalse(q.isEmpty());
+            assertEquals(1, q.countChunks());
+
+            q.clear();
         }
     }
 
