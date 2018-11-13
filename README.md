@@ -21,7 +21,7 @@ File formats
 ### Queue Header
 
 ```
-|chunk-ref|
+first-chunk := chunk-ref
 ```
 
 The queue header file consists only of a reference to the first chunk. If it is the `NULL_REF` it indicates an empty queue.
