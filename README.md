@@ -33,8 +33,8 @@ Chunk files are named like the the queue header file with their chunk index appe
 The file is structured as follows:
 
 ```
-chunk := head-ptr tail-ptr next-ref payload*
-payload := data-length data
+chunk    := head-ptr tail-ptr next-ref payload*
+payload  := data-length data
 head-ptr := pointer
 tail-ptr := pointer
 next-ref := chunk-ref
