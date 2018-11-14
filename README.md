@@ -47,8 +47,8 @@ next-ref := chunk-ref
 | Queue Header    |
 |                 |
 |                 |
-| |first-chunk|    |
-|  +              |
+| |first-chunk|   |
+|  |              |
 |  |              |
 +-----------------+
    |
@@ -60,7 +60,7 @@ next-ref := chunk-ref
       |            |                                                   | |
       |            |                                                   v |
       |  |head-ptr|tail-ptr|next-ref|data-length|data|data-length|data|  |
-      |   |                 +        ^                                   |
+      |   |                 |        ^                                   |
       |   |                 |        |                                   |
       |   +--------------------------+                                   |
       |                     |                                            |
@@ -78,7 +78,7 @@ next-ref := chunk-ref
       |            |                                                     |
       |            |                                                     |
       |  |........|........|........|......                              |
-      |   |                 +                                            |
+      |   |                 |                                            |
       |   |                 |                                            |
       |   +-----...         |                                            |
       |                     |                                            |
