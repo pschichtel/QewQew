@@ -47,7 +47,7 @@ next-ref := chunk-ref
 | Queue Header    |
 |                 |
 |                 |
-| |first-chunk|   |
+| |first-chunk|    |
 |  |              |
 |  |              |
 +-----------------+
