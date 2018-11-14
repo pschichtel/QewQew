@@ -117,7 +117,9 @@ public class SimplePollableQewQew<E> implements PollableQewQew<E> {
             E elem = null;
             if (poll(timeout, unit)) {
                 elem = qew.peek();
-                qew.dequeue();
+                if (elem != null) {
+                    qew.dequeue();
+                }
             }
             return elem;
         } finally {

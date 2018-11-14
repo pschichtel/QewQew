@@ -194,9 +194,6 @@ public class SimpleQewQew implements QewQew<byte[]> {
             return null;
         }
 
-        // TODO try to merge the 2 reads into one
-
-
         Chunk head = chunks.getFirst();
         byte[] output = new byte[peekLength(head)];
         peek(head, output);
@@ -241,6 +238,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
             writeChunkHeadPtr(chunk);
             chunk.map.force();
         }
+
         return true;
     }
 
