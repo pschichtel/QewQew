@@ -23,9 +23,16 @@
 package tel.schich.qewqew;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 public interface PollableQewQew<E> extends QewQew<E> {
     boolean poll(long timeout, TimeUnit unit) throws InterruptedException;
     E peek(long timeout, TimeUnit unit) throws IOException, InterruptedException;
+    E dequeue(long timeout, TimeUnit unit) throws IOException, InterruptedException;
+    E dequeueIf(long timeout, TimeUnit unit, DequeueCondition<E> condition) throws IOException, InterruptedException, ExecutionException;
+
+    interface DequeueCondition<E> {
+        boolean test(E elem) throws Exception;
+    }
 }

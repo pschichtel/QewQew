@@ -24,6 +24,7 @@ package tel.schich.qewqew;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
@@ -107,6 +108,40 @@ public class SimplePollableQewQew<E> implements PollableQewQew<E> {
             lock.unlock();
         }
 
+    }
+
+    @Override
+    public E dequeue(long timeout, TimeUnit unit) throws IOException, InterruptedException {
+        lock.lock();
+        try {
+            E elem = null;
+            if (poll(timeout, unit)) {
+                elem = qew.peek();
+                qew.dequeue();
+            }
+            return elem;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public E dequeueIf(long timeout, TimeUnit unit, DequeueCondition<E> condition) throws IOException, InterruptedException, ExecutionException {
+        lock.lock();
+        try {
+            E elem = peek(timeout, unit);
+            try {
+                if (elem != null && condition.test(elem)) {
+                    qew.dequeue();
+                    return elem;
+                }
+            } catch (Exception e) {
+                throw new ExecutionException(e);
+            }
+        } finally {
+            lock.unlock();
+        }
+        return null;
     }
 
     @Override
