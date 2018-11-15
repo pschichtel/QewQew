@@ -94,7 +94,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static Head openQueue(Path path) throws IOException {
         final Path absPath = path.toAbsolutePath();
-        final FileChannel file = FileChannel.open(absPath, CREATE, WRITE, READ, DSYNC);
+        final FileChannel file = openFile(absPath);
         final FileLock lock;
         try {
             lock = file.tryLock();
@@ -126,7 +126,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static Chunk openChunk(Head head, int id, boolean forceNew, long chunkSize) throws IOException {
         final Path path = resolveNextRef(head, id);
-        final FileChannel file = FileChannel.open(path, CREATE, WRITE, READ, DSYNC);
+        final FileChannel file = openFile(path);
         final FileLock lock = file.lock();
         final MappedByteBuffer map = file.map(FileChannel.MapMode.READ_WRITE, 0, chunkSize);
 
@@ -146,6 +146,10 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
 
         return new Chunk(path, file, lock, map, headPtr, tailPtr, id, next);
+    }
+
+    private static FileChannel openFile(Path path) throws IOException {
+        return FileChannel.open(path, CREATE, WRITE, READ, DSYNC);
     }
 
     private static Path resolveNextRef(Head head, int id) {
