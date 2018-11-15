@@ -52,13 +52,14 @@ final class Chunk implements Closeable {
     }
 
     void drop() throws IOException {
-        map.force();
         close();
         Files.delete(path);
     }
 
     @Override
     public void close() throws IOException {
+        map.force();
+        lock.release();
         file.close();
     }
 }

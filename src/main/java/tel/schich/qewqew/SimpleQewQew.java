@@ -28,6 +28,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
@@ -282,7 +283,12 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
                 }
             }
-            Files.delete(head.path);
+            try {
+                Files.delete(head.path);
+            } catch (AccessDeniedException ignored) {
+                // FUCK OFF Windows
+                head.path.toFile().deleteOnExit();
+            }
         }
     }
 

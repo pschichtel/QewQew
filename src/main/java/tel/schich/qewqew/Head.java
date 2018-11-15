@@ -47,6 +47,8 @@ final class Head implements Closeable {
 
     @Override
     public void close() throws IOException {
+        map.force();
+        lock.release();
         file.close();
     }
 }
