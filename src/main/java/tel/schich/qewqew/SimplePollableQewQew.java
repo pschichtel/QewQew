@@ -58,7 +58,7 @@ public class SimplePollableQewQew<E> implements PollableQewQew<E> {
             while (qew.isEmpty() && timeoutNanos > 0) {
                 timeoutNanos = nonEmpty.awaitNanos(timeoutNanos);
             }
-            return qew.isEmpty();
+            return !qew.isEmpty();
         } finally {
             lock.unlock();
         }
