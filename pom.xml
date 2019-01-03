@@ -10,7 +10,7 @@
 
     <groupId>tel.schich</groupId>
     <artifactId>qewqew</artifactId>
-    <version>1.0.3-SNAPSHOT</version>
+    <version>1.0.3</version>
     <name>QewQew</name>
     <url>https://github.com/pschichtel/QewQew</url>
     <inceptionYear>2018</inceptionYear>
@@ -26,7 +26,7 @@
         <url>https://github.com/pschichtel/QewQew</url>
         <connection>scm:git:https://github.com/pschichtel/QewQew</connection>
         <developerConnection>scm:git:git@github.com:pschichtel/QewQew</developerConnection>
-        <tag>HEAD</tag>
+        <tag>qewqew-1.0.3</tag>
     </scm>
 
     <developers>
