@@ -22,6 +22,17 @@
  */
 package tel.schich.qewqew;
 
+import static tel.schich.qewqew.SimpleQewQew.CHUNK_HEADER_OFFSET;
+import static tel.schich.qewqew.SimpleQewQew.CHUNK_HEADER_SIZE;
+import static tel.schich.qewqew.SimpleQewQew.CHUNK_HEAD_PTR_OFFSET;
+import static tel.schich.qewqew.SimpleQewQew.CHUNK_NEXT_REF_OFFSET;
+import static tel.schich.qewqew.SimpleQewQew.CHUNK_TAIL_PTR_OFFSET;
+import static tel.schich.qewqew.SimpleQewQew.ENTRY_HEADER_SIZE;
+import static tel.schich.qewqew.SimpleQewQew.NULL_REF;
+import static tel.schich.qewqew.SimpleQewQew.getUShort;
+import static tel.schich.qewqew.SimpleQewQew.openFile;
+import static tel.schich.qewqew.SimpleQewQew.putUShort;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.MappedByteBuffer;
@@ -31,24 +42,51 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 final class Chunk implements Closeable {
-    final Path path;
-    final FileChannel file;
+
+    private final long chunkSize;
+    private final Path path;
+    final int id;
+
+    private FileChannel file;
+    private FileLock lock;
+    private MappedByteBuffer map;
+
     int headPtr;
     int tailPtr;
-    final FileLock lock;
-    final int id;
     int next;
-    final MappedByteBuffer map;
 
-    Chunk(Path path, FileChannel file, FileLock lock, MappedByteBuffer map, int headPtr, int tailPtr, int id, int next) {
+    Chunk(Path path, int id, long chunkSize) {
         this.path = path;
-        this.file = file;
-        this.lock = lock;
         this.id = id;
-        this.headPtr = headPtr;
-        this.tailPtr = tailPtr;
-        this.next = next;
-        this.map = map;
+        this.chunkSize = chunkSize;
+    }
+
+    void open() throws IOException {
+        if (this.file != null) {
+            return;
+        }
+        this.file = openFile(path);
+        this.lock = file.lock();
+        this.map = file.map(FileChannel.MapMode.READ_WRITE, 0, this.chunkSize);
+    }
+
+    Chunk init(boolean forceNew) throws IOException {
+
+        this.open();
+
+        if (forceNew) {
+            this.file.truncate(chunkSize);
+            this.headPtr = CHUNK_HEADER_SIZE;
+            this.tailPtr = CHUNK_HEADER_SIZE;
+            this.next = NULL_REF;
+        } else {
+            this.map.position(CHUNK_HEADER_OFFSET);
+            this.headPtr = map.getInt(CHUNK_HEAD_PTR_OFFSET);
+            this.tailPtr = map.getInt(CHUNK_TAIL_PTR_OFFSET);
+            this.next = getUShort(map, CHUNK_NEXT_REF_OFFSET);
+        }
+
+        return this;
     }
 
     void drop() throws IOException {
@@ -58,8 +96,53 @@ final class Chunk implements Closeable {
 
     @Override
     public void close() throws IOException {
-        map.force();
-        lock.release();
-        file.close();
+        if (this.file != null) {
+            this.force();
+            this.lock.release();
+            this.file.close();
+        }
+        this.file = null;
+        this.lock = null;
+        this.map = null;
     }
+
+    void force() {
+        this.map.force();
+    }
+
+    byte[] peek(byte[] output) {
+        this.map.position(this.headPtr + SimpleQewQew.ENTRY_HEADER_SIZE);
+        this.map.get(output);
+        return output;
+    }
+
+    void writeChunkHeader() {
+        writeChunkHeadPtr();
+        writeChunkTailPtr();
+        writeChunkNextRef();
+    }
+
+    void writeChunkHeadPtr() {
+        this.map.putInt(CHUNK_HEAD_PTR_OFFSET, this.headPtr);
+    }
+
+    void writeChunkTailPtr() {
+        this.map.putInt(CHUNK_TAIL_PTR_OFFSET, this.tailPtr);
+    }
+
+    void writeChunkNextRef() {
+        SimpleQewQew.putUShort(this.map, CHUNK_NEXT_REF_OFFSET, this.next);
+    }
+
+    void putPayload(byte[] payload, int offset, int length) {
+        putUShort(this.map, this.tailPtr, length);
+        this.map.position(this.tailPtr + ENTRY_HEADER_SIZE);
+        this.map.put(payload, offset, length);
+    }
+
+    int peekLength() {
+        return getUShort(this.map, this.headPtr);
+    }
+
+
 }

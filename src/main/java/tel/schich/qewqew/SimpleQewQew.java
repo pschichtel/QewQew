@@ -62,7 +62,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
     static final int CHUNK_NEXT_REF_OFFSET = CHUNK_TAIL_PTR_OFFSET + PTR_SIZE;
     static final int ENTRY_HEADER_SIZE = Short.BYTES;
 
-    private static final int NULL_REF = 0;
+    static final int NULL_REF = 0;
     private static final int MAX_ID = ((short)-1) & 0xFFFF;
     private static final long MAX_CHUNK_SIZE = 0xFFFFFFFFL;
 
@@ -136,29 +136,10 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     private static Chunk openChunk(Head head, int id, boolean forceNew, long chunkSize) throws IOException {
         final Path path = resolveNextRef(head, id);
-        final FileChannel file = openFile(path);
-        final FileLock lock = file.lock();
-        final MappedByteBuffer map = file.map(FileChannel.MapMode.READ_WRITE, 0, chunkSize);
-
-        final int headPtr;
-        final int tailPtr;
-        final int next;
-        if (forceNew) {
-            file.truncate(chunkSize);
-            headPtr = CHUNK_HEADER_SIZE;
-            tailPtr = CHUNK_HEADER_SIZE;
-            next = NULL_REF;
-        } else {
-            map.position(CHUNK_HEADER_OFFSET);
-            headPtr = map.getInt(CHUNK_HEAD_PTR_OFFSET);
-            tailPtr = map.getInt(CHUNK_TAIL_PTR_OFFSET);
-            next = getUShort(map, CHUNK_NEXT_REF_OFFSET);
-        }
-
-        return new Chunk(path, file, lock, map, headPtr, tailPtr, id, next);
+        return new Chunk(path, id, chunkSize).init(forceNew);
     }
 
-    private static FileChannel openFile(Path path) throws IOException {
+    static FileChannel openFile(Path path) throws IOException {
         return FileChannel.open(path, CREATE, WRITE, READ, DSYNC);
     }
 
@@ -201,7 +182,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
     public void peek(byte[] output) {
         Chunk head = chunks.getFirst();
-        peek(head, output);
+        head.peek(output);
     }
 
     public byte[] peek() {
@@ -211,20 +192,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
 
         Chunk head = chunks.getFirst();
         byte[] output = new byte[peekLength(head)];
-        peek(head, output);
-        return output;
-    }
-
-    private static void peek(Chunk chunk, byte[] output) {
-        chunk.map.position(chunk.headPtr + ENTRY_HEADER_SIZE);
-        chunk.map.get(output);
-    }
-
-    private int peekLength(Chunk chunk) {
-        if (cachedHeadSize == -1) {
-            cachedHeadSize = getUShort(chunk.map, chunk.headPtr);
-        }
-        return cachedHeadSize;
+        return head.peek(output);
     }
 
     public boolean dequeue() throws IOException {
@@ -242,19 +210,27 @@ public class SimpleQewQew implements QewQew<byte[]> {
             if (chunks.size() == 1) {
                 Chunk onlyRemaining = chunks.getFirst();
                 resetChunk(onlyRemaining);
-                chunk.map.force();
+                chunk.force();
             } else {
                 Chunk depleted = chunks.removeFirst();
                 depleted.drop();
                 head.first = depleted.next;
+                chunks.getFirst().open(); // open next chunk
                 writeQueueFirst(head);
             }
         } else {
-            writeChunkHeadPtr(chunk);
-            chunk.map.force();
+            chunk.writeChunkHeadPtr();
+            chunk.force();
         }
 
         return true;
+    }
+
+    private int peekLength(Chunk chunk) {
+        if (cachedHeadSize == -1) {
+            cachedHeadSize = chunk.peekLength();
+        }
+        return cachedHeadSize;
     }
 
     public void enqueue(byte[] input) throws IOException {
@@ -276,7 +252,6 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
 
         writeToChunk(chunk, input, offset, length, newChunk);
-        chunk.map.force();
     }
 
     @Override
@@ -313,61 +288,43 @@ public class SimpleQewQew implements QewQew<byte[]> {
                 nextId++;
             }
             chunk.next = nextId;
-            writeChunkNextRef(chunk);
+            chunk.writeChunkNextRef();
             Chunk next = openChunk(this.head, nextId, true, this.chunkSize);
+            chunk.close();
             chunks.addLast(next);
             chunk = next;
             newChunk = true;
         }
 
-        putUShort(chunk.map, chunk.tailPtr, length);
-        chunk.map.position(chunk.tailPtr + ENTRY_HEADER_SIZE);
-        chunk.map.put(payload, offset, length);
+        chunk.putPayload(payload, offset, length);
 
         chunk.tailPtr = chunk.tailPtr + ENTRY_HEADER_SIZE + length;
         if (newChunk) {
-            writeChunkHeader(chunk);
+            chunk.writeChunkHeader();
         } else {
-            writeChunkTailPtr(chunk);
+            chunk.writeChunkTailPtr();
         }
+        chunk.force();
     }
 
     private static void resetChunk(Chunk chunk) {
         chunk.headPtr = CHUNK_HEADER_SIZE;
         chunk.tailPtr = CHUNK_HEADER_SIZE;
         chunk.next = NULL_REF;
-        writeChunkHeader(chunk);
+        chunk.writeChunkHeader();
     }
 
-    private static void writeChunkHeader(Chunk chunk) {
-        writeChunkHeadPtr(chunk);
-        writeChunkTailPtr(chunk);
-        writeChunkNextRef(chunk);
-    }
-
-    private static void writeChunkHeadPtr(Chunk chunk) {
-        chunk.map.putInt(CHUNK_HEAD_PTR_OFFSET, chunk.headPtr);
-    }
-
-    private static void writeChunkTailPtr(Chunk chunk) {
-        chunk.map.putInt(CHUNK_TAIL_PTR_OFFSET, chunk.tailPtr);
-    }
-
-
-    private static void writeChunkNextRef(Chunk chunk) {
-        putUShort(chunk.map, CHUNK_NEXT_REF_OFFSET, chunk.next);
-    }
 
     private static void writeQueueFirst(Head head) {
         putUShort(head.map, 0, head.first);
         head.map.force();
     }
 
-    private static int getUShort(ByteBuffer buf, int index) {
+    static int getUShort(ByteBuffer buf, int index) {
         return buf.getShort(index) & 0xFFFF;
     }
 
-    private static void putUShort(ByteBuffer buf, int index, int i) {
+    static void putUShort(ByteBuffer buf, int index, int i) {
         buf.putShort(index, (short) (i & 0xFFFF));
     }
 
