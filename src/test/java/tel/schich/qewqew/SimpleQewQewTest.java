@@ -23,6 +23,7 @@
 package tel.schich.qewqew;
 
 import java.io.IOException;
+import java.nio.BufferOverflowException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.NoSuchAlgorithmException;
@@ -149,6 +150,18 @@ class SimpleQewQewTest {
         try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
             assertTrue(q.clear());
         }
+    }
+
+    @Test
+    void testQueueIsTooBig() {
+        assertThrows(BufferOverflowException.class, () -> {
+            final Path headPath = randomHeadPath();
+            final Random r = new Random(1);
+            try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
+                final int bufSize = (int) q.getMaxElementSize();
+                q.enqueue(random(r, bufSize + 1));
+            }
+        });
     }
 
     static byte[] buf(int... data) {
