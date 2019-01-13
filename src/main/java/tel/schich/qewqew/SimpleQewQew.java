@@ -23,6 +23,7 @@
 package tel.schich.qewqew;
 
 import java.io.IOException;
+import java.nio.BufferOverflowException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -233,7 +234,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
         return cachedHeadSize;
     }
 
-    public void enqueue(byte[] input) throws IOException {
+    public void enqueue(byte[] input) throws IOException, BufferOverflowException {
         enqueue(input, 0, input.length);
     }
 
@@ -282,7 +283,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
     }
 
     private void writeToChunk(Chunk chunk, byte[] payload, int offset, int length, boolean newChunk) throws IOException {
-        while (chunk.tailPtr + ENTRY_HEADER_SIZE + length > chunkSize) {
+        if (chunk.tailPtr + ENTRY_HEADER_SIZE + length > chunkSize) {
             int nextId = (chunk.id + 1) % MAX_ID;
             if (nextId == 0) {
                 nextId++;
