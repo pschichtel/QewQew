@@ -25,22 +25,27 @@ package tel.schich.qewqew;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static tel.schich.qewqew.TestHelper.hashFile;
 
 class SimpleQewQewTest {
 
-    static final Path HEAD_PATH = Paths.get("qew-head.qew");
-
     public static final int CHUNK_SIZE = 1024;
+
+    Path randomHeadPath() {
+        return Paths.get("/tmp/qew-" + (new Random().nextInt()) + ".qew");
+    }
 
     @Test
     void testQueue() throws IOException {
-        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
+        final Path headPath = randomHeadPath();
+        try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
             q.clear();
             assertTrue(q.isEmpty());
 
@@ -61,11 +66,12 @@ class SimpleQewQewTest {
      */
     @Test
     void testChunkSizeEdge() throws IOException {
+        final Path headPath = randomHeadPath();
         final byte[] payload = {1, 2, 3};
         // chunk fits its header, 1 entry header (length) and 2 same-size payloads
         final int chunkSize = SimpleQewQew.CHUNK_HEADER_SIZE + SimpleQewQew.ENTRY_HEADER_SIZE + 2 * payload.length;
 
-        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, chunkSize)) {
+        try (SimpleQewQew q = new SimpleQewQew(headPath, chunkSize)) {
             q.clear();
             assertTrue(q.isEmpty());
 
@@ -88,16 +94,18 @@ class SimpleQewQewTest {
 
     @Test
     void testMultipleOpen() throws IOException {
-        try (SimpleQewQew ignored = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
-            assertThrows(QewAlreadyOpenException.class, () -> new SimpleQewQew(HEAD_PATH, CHUNK_SIZE));
+        final Path headPath = randomHeadPath();
+        try (SimpleQewQew ignored = new SimpleQewQew(headPath, CHUNK_SIZE)) {
+            assertThrows(QewAlreadyOpenException.class, () -> new SimpleQewQew(headPath, CHUNK_SIZE));
         }
     }
 
     @Test
     void testManyWrites() throws IOException {
-        Random r = new Random(1);
-        Queue<byte[]> expectedBuffers = new ArrayDeque<>();
-        try (SimpleQewQew q = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
+        final Path headPath = randomHeadPath();
+        final Random r = new Random(1);
+        final Queue<byte[]> expectedBuffers = new ArrayDeque<>();
+        try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
             q.clear();
             for (int i = 0; i < 1000; ++i) {
                 byte[] buf = buf(r.nextInt(((short) -1) & 0xFFFF), r.nextInt(((short) -1) & 0xFFFF));
@@ -108,7 +116,7 @@ class SimpleQewQewTest {
         }
 
 
-        try (SimpleQewQew actualBuffers = new SimpleQewQew(HEAD_PATH, CHUNK_SIZE)) {
+        try (SimpleQewQew actualBuffers = new SimpleQewQew(headPath, CHUNK_SIZE)) {
             while (!actualBuffers.isEmpty()) {
                 byte[] expected = expectedBuffers.remove();
                 byte[] actual = actualBuffers.peek();
@@ -122,11 +130,38 @@ class SimpleQewQewTest {
         }
     }
 
+    @Test
+    void testQueueHeadUpdate() throws IOException, NoSuchAlgorithmException {
+        final Path headPath = randomHeadPath();
+        final Random r = new Random(1);
+        try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
+            final int bufSize = (int) q.getMaxElementSize();
+            q.enqueue(random(r, bufSize));
+            q.enqueue(random(r, bufSize));
+        }
+
+        final String initialHash = hashFile(headPath);
+        try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
+            q.dequeue();
+        }
+        assertNotEquals(initialHash, hashFile(headPath));
+
+        try (SimpleQewQew q = new SimpleQewQew(headPath, CHUNK_SIZE)) {
+            assertTrue(q.clear());
+        }
+    }
+
     static byte[] buf(int... data) {
         byte[] out = new byte[data.length];
         for (int i = 0; i < data.length; i++) {
             out[i] = (byte) data[i];
         }
         return out;
+    }
+
+    static byte[] random(Random r, int size) {
+        byte[] buf = new byte[size];
+        r.nextBytes(buf);
+        return buf;
     }
 }

@@ -92,6 +92,16 @@ public class SimpleQewQew implements QewQew<byte[]> {
         }
     }
 
+    @Override
+    public long getChunkSize() {
+        return chunkSize;
+    }
+
+    @Override
+    public long getMaxElementSize() {
+        return getChunkSize() - CHUNK_HEADER_SIZE - ENTRY_HEADER_SIZE;
+    }
+
     private static Head openQueue(Path path) throws IOException {
         final Path absPath = path.toAbsolutePath();
         final FileChannel file = openFile(absPath);
@@ -234,10 +244,10 @@ public class SimpleQewQew implements QewQew<byte[]> {
                 resetChunk(onlyRemaining);
                 chunk.map.force();
             } else {
-                writeQueueFirst(head);
                 Chunk depleted = chunks.removeFirst();
                 depleted.drop();
                 head.first = depleted.next;
+                writeQueueFirst(head);
             }
         } else {
             writeChunkHeadPtr(chunk);
@@ -297,7 +307,7 @@ public class SimpleQewQew implements QewQew<byte[]> {
     }
 
     private void writeToChunk(Chunk chunk, byte[] payload, int offset, int length, boolean newChunk) throws IOException {
-        while (chunk.tailPtr + ENTRY_HEADER_SIZE + length >= chunkSize) {
+        while (chunk.tailPtr + ENTRY_HEADER_SIZE + length > chunkSize) {
             int nextId = (chunk.id + 1) % MAX_ID;
             if (nextId == 0) {
                 nextId++;

@@ -51,6 +51,16 @@ public class SimplePollableQewQew<E> implements PollableQewQew<E> {
     }
 
     @Override
+    public long getChunkSize() {
+        return qew.getChunkSize();
+    }
+
+    @Override
+    public long getMaxElementSize() {
+        return qew.getMaxElementSize();
+    }
+
+    @Override
     public boolean poll(long timeout, TimeUnit unit) throws InterruptedException {
         lock.lock();
         try {
