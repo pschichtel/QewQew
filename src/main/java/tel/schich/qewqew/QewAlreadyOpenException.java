@@ -23,7 +23,6 @@
 package tel.schich.qewqew;
 
 import java.io.IOException;
-import java.nio.channels.OverlappingFileLockException;
 
 public class QewAlreadyOpenException extends IOException {
     public QewAlreadyOpenException() {

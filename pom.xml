@@ -127,16 +127,20 @@
                 <version>4.6</version>
                 <configuration>
                     <strictCheck>true</strictCheck>
-                    <header>com/mycila/maven/plugin/license/templates/MIT.txt</header>
-                    <includes>
-                        <include>src/**/*.java</include>
-                    </includes>
-                    <excludes>
-                        <exclude>${project.build.outputDirectory}</exclude>
-                    </excludes>
                     <properties>
                         <owner>Phillip Schichtel</owner>
                     </properties>
+                    <licenseSets>
+                        <licenseSet>
+                            <header>com/mycila/maven/plugin/license/templates/MIT.txt</header>
+                            <includes>
+                                <include>src/**/*.java</include>
+                            </includes>
+                            <excludes>
+                                <exclude>${project.build.outputDirectory}</exclude>
+                            </excludes>
+                        </licenseSet>
+                    </licenseSets>
                     <mapping>
                         <java>SLASHSTAR_STYLE</java>
                     </mapping>
